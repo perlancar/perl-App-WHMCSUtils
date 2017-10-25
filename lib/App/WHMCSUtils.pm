@@ -1,4 +1,6 @@
- package App::WHMCSUtils;
+package App::WHMCSUtils;
+
+## no critic (InputOutput::RequireBriefOpen)
 
 # AUTHORITY
 # DATE
