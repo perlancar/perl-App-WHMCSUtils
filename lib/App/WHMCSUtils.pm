@@ -1,10 +1,8 @@
-package App::WHMCSUtils;
-
 ## no critic (InputOutput::RequireBriefOpen)
 
-# AUTHORITY
+package App::WHMCSUtils;
+
 # DATE
-# DIST
 # VERSION
 
 use 5.010001;
@@ -268,7 +266,7 @@ sub restore_whmcs_client {
 }
 
 sub _add_monthly_revs {
-    my ($row, $date1, $date2) = @_;
+    my ($row, $date1, $date2, $date_old_limit) = @_;
 
     if ($date2) {
         my ($y1, $m1) = $date1 =~ /\A(\d{4})-(\d{2})-(\d{2})/
@@ -285,11 +283,13 @@ sub _add_monthly_revs {
             $m++; if ($m == 13) { $m = 1; $y++ }
         }
         ($y, $m) = ($y1, $m1);
-        $num_months-- unless $num_months < 2;
-        while (1) {
-            $row->{sprintf("rev_%04d_%02d", $y, $m)} =
-                $row->{amount} / $num_months;
-            last if $y == $y2 && $m == $m2;
+        for my $i (1..$num_months) {
+            my $key = sprintf("rev_%04d_%02d", $y, $m);
+            if ($date_old_limit) {
+                $date_old_limit =~ /^(\d{4})-(\d{2})/;
+                $key = "rev_past" if $key lt "rev_${1}_$2";
+            }
+            $row->{$key} += $row->{amount} / $num_months;
             $m++; if ($m == 13) { $m = 1; $y++ }
         }
     } else {
@@ -303,10 +303,25 @@ $SPEC{calc_deferred_revenue} = {
     v => 1.1,
     description => <<'_',
 
-Calculate revenue but split (defer) revenue for hosting over the course of
-hosting period.
+This utility collects invoice items from paid invoices, filters eligible ones,
+then defers the revenue to separate months for items that should be deferred,
+and finally sums the amounts to calculate total monthly deferred revenues.
+
+This utility can also be instructed (via setting the `full` option to true) to
+output the full report (each items with their categorizations and deferred
+revenues).
 
 Recognizes English and Indonesian description text.
+
+Categorization heuristics:
+
+* Fund deposits are not recognized as revenues.
+* Hosting revenues are deferred, but when the description indicates starting and
+  ending dates and the dates are not too old.
+* Domain revenues are not deferred, they are recognized immediately.
+* Other items will be assumed as immediate revenues.
+
+Extra rules (applied first) can be specified via the `extra_rules` option.
 
 _
     args => {
@@ -321,6 +336,41 @@ _
             schema => ['date*', 'x.perl.coerce_to' => 'DateTime'],
             tags => ['category:filtering'],
         },
+        date_old_limit => {
+            summary => 'Set what date will be considered too old to recognize item as revenue',
+            schema => ['date*', 'x.perl.coerce_to' => 'DateTime'],
+            description => <<'_',
+
+Default is 2008-01-01.
+
+_
+        },
+        extra_rules => {
+            'x.name.is_plural' => 1,
+            'x.name.singular' => 'extra_rule',
+            schema => ['array*', of=>['hash*', of=>'re*']],
+            description => <<'_',
+
+Example (in JSON):
+
+    [
+        {
+            "type": "^$",
+            "description": "^SEWA",
+            "category": "rent"
+        }
+    ]
+
+_
+            tags => ['category:rule'],
+        },
+        full => {
+            schema => 'true*',
+            tags => ['category:output'],
+        },
+        output_file => {
+            schema => 'filename*',
+        },
     },
     features => {
         progress => 1,
@@ -329,17 +379,24 @@ _
 sub calc_deferred_revenue {
     my %args = @_;
 
+    log_trace "args=%s", \%args;
+
+    my $date_old_limit = $args{date_old_limit} ?
+        $args{date_old_limit}->ymd : '2008-01-01';
+
     my $progress = $args{-progress};
 
     my $dbh = _connect_db(%args);
 
     my $extra_wheres = '';
     if ($args{date_start}) {
-        $extra_wheres .= " AND i.datepaid >= '".$args{date_start}->ymd()."'";
+        $extra_wheres .= " AND i.datepaid >= '".$args{date_start}->ymd()." 00:00:00'";
     }
     if ($args{date_end}) {
-        $extra_wheres .= " AND i.datepaid <= '".$args{date_end}->ymd()."'";
+        $extra_wheres .= " AND i.datepaid <= '".$args{date_end}->ymd()." 23:59:59'";
     }
+
+    my @fields = qw(id invoiceid datepaid clientid type relid amount category description);
 
     my $sth = $dbh->prepare(<<_);
 SELECT
@@ -351,9 +408,9 @@ SELECT
   ii.relid relid,
   ii.description description,
   ii.amount amount,
-  ii.taxed taxed,
-  ii.duedate duedate,
-  ii.notes notes,
+  -- ii.taxed taxed,
+  -- ii.duedate duedate,
+  -- ii.notes notes,
 
   i.datepaid datepaid
 
@@ -368,28 +425,22 @@ _
 
     log_info "Loading all paid invoice items ...";
     $sth->execute;
-    my @invoiceitems;
-    while (my $row = $sth->fetchrow_hashref) {
-        push @invoiceitems, $row;
-    }
-    log_info "Number of invoice items: %d", ~~@invoiceitems;
-
     my @rows;
+    while (my $row = $sth->fetchrow_hashref) {
+        push @rows, $row;
+    }
+    log_info "Number of invoice items: %d", ~~@rows;
+
     my $num_errors = 0;
 
-    $progress->target(~~@invoiceitems);
+    $progress->target(~~@rows) if $progress;
   ITEM:
-    for my $i (0..$#invoiceitems) {
-        my $row = $invoiceitems[$i];
-        my $label = "(".($i+1)."/".(scalar @invoiceitems).
-            ") item#$row->{id} inv#=$row->{invoiceid} datepaid=#row->{datepaid} amount=$row->{amount} description='$row->{description}'";
+    for my $i (0..$#rows) {
+        my $row = $rows[$i];
+        my $label = "(".($i+1)."/".(scalar @rows).
+            ") item#$row->{id} inv#=$row->{invoiceid} datepaid=#$row->{datepaid} amount=$row->{amount} description='$row->{description}'";
         log_trace "Processing $label: %s ...", $row;
-        $progress->update;
-
-        if ($row->{type} eq 'AddFunds') {
-            log_trace "$label: AddFunds is not a revenue, skipping this item";
-            next ITEM;
-        }
+        $progress->update if $progress;
 
         my ($date1, $date2);
         if ($row->{description} =~ m!\((?<date1>(?<d1>\d{2})/(?<m1>\d{2})/(?<y1>\d{4})) - (?<date2>(?<d2>\d{2})/(?<m2>\d{2})/(?<y2>\d{4}))\)!) {
@@ -407,13 +458,10 @@ _
                     last CHECK_DATE;
                 }
                 # sanity check
-                if ($date1 lt '2008-01-01') {
-                    log_warn "$label: Date1 '$date1' is too old, skipping this item";
-                    next ITEM;
-                }
-                # sanity check
-                if ($date2 lt '2008-01-01') {
-                    log_warn "$label: Date2 '$date2' is too old, skipping this item";
+                if ($date2 lt $date_old_limit) {
+                    $row->{category} = 'old2';
+                    $row->{rev_past} = $row->{amount};
+                    log_warn "$label: Date2 '$date2' is too old (< $date_old_limit), recognizing as past revenue";
                     next ITEM;
                 }
             }
@@ -434,42 +482,106 @@ _
             }
         }
 
+      ITEM_DEPOSIT:
+        {
+            last unless $row->{type} eq 'AddFunds';
+            $row->{category} = 'deposit';
+            log_trace "$label: AddFunds is not a revenue";
+            next ITEM;
+        }
+
+      ITEM_EXTRA_RULES:
+        {
+            last unless $args{extra_rules} && @{$args{extra_rules}};
+            for my $i (0..$#{ $args{extra_rules} }) {
+                my $rule = $args{extra_rules}[$i];
+                if ($rule->{type}) {
+                    log_trace "Matching extra rule: type: %s vs %s", $rule->{type}, $row->{type};
+                    next unless $row->{type} =~ /$rule->{type}/;
+                }
+                if ($rule->{description}) {
+                    log_trace "Matching extra rule: description: %s vs %s", $rule->{description}, $row->{description};
+                    next unless $row->{description} =~ /$rule->{description}/;
+                }
+                log_trace "%s: matches rule #%d", $label, $i+1;
+                $row->{category} = $rule->{category};
+                next ITEM;
+            }
+        }
+
       ITEM_HOSTING:
         {
             last unless $type eq 'Hosting' && $date1 && $date2;
+            $row->{category} = 'revenue_deferred';
             log_debug "$label: Item is hosting, deferring revenue $row->{amount} from $date1 to $date2";
-            _add_monthly_revs($row, $date1, $date2);
-            log_trace "row=%s", $row;
-            push @rows, $row; next ITEM;
+            _add_monthly_revs($row, $date1, $date2, $date_old_limit);
+            next ITEM;
         }
 
         if ($type =~ /^(|Invoice|Item|Hosting|Addon|Domain|DomainRegister|DomainTransfer|PromoDomain|PromoHosting|Upgrade|MG_DIS_CHARGE)$/) {
+            $row->{category} = 'revenue_immediate';
             log_debug "$label: Type is '$type', recognized revenue $row->{amount} immediately (not deferred) at date of payment $row->{datepaid}";
             _add_monthly_revs($row, $row->{datepaid}, undef);
-            push @rows, $row; next ITEM;
+            next ITEM;
         }
 
+        $row->{category} = 'revenue_immediate';
         log_warn "$label: Can't categorize, assuming immediate";
         _add_monthly_revs($row, $row->{datepaid}, undef);
-        push @rows, $row; next ITEM;
+        next ITEM;
     }
 
     if ($num_errors) {
         return [500, "There are still errors in the invoice items, please fix first"];
     }
 
+    if ($args{full}) {
+        log_info "Producing CSV ...";
+        $progress->target(2 * @rows);
+
+        # collect fields to output
+        my %months;
+        for my $row (@rows) {
+            for my $k (keys %$row) {
+                $months{$k}++ if $k =~ /^rev_/;
+            }
+        }
+        push @fields, "rev_past" if delete $months{rev_past};
+        push @fields, $_ for sort keys %months;
+
+        # output rows
+        my $fh;
+        if ($args{output_file}) {
+            open $fh, ">", $args{output_file}
+                or return [500, "Can't open $args{output_file}: $!"];
+        } else {
+            $fh = \*STDOUT;
+        }
+        require Text::CSV_XS;
+        my $csv = Text::CSV_XS->new({ binary=>1 });
+        $csv->combine(@fields);
+        print $fh $csv->string, "\n";
+        for my $row (@rows) {
+            $progress->update;
+            $csv->combine(map {$row->{$_} // ''} @fields);
+            print $fh $csv->string, "\n";
+        }
+    }
+
+    log_info "Calculating revenues ...";
     my %revs; # key = period
     for my $row (@rows) {
         for my $k (keys %$row) {
             if ($k =~ /^rev_(\d{4})_(\d{2})$/) {
                 $revs{"$1-$2"} += $row->{$k};
             } elsif ($k =~ /^rev_past$/) {
-                $revs{past} = $row->{$k};
+                $revs{'00-past'} += $row->{$k};
             }
         }
     }
 
-    [200, "OK", \%revs];
+    $progress->finish if $progress;
+    return [200, "OK", \%revs];
 }
 
 1;
