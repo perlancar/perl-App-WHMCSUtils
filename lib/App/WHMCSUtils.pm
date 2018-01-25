@@ -318,7 +318,7 @@ Categorization heuristics:
 * Fund deposits are not recognized as revenues.
 * Hosting revenues are deferred, but when the description indicates starting and
   ending dates and the dates are not too old.
-* Domain revenues are not deferred, they are recognized immediately.
+* Domain and addon revenues are not deferred, they are recognized immediately.
 * Other items will be assumed as immediate revenues.
 
 Extra rules (applied first) can be specified via the `extra_rules` option.
@@ -467,7 +467,9 @@ _
         $progress->update if $progress;
 
         my ($date1, $date2);
-        if ($row->{description} =~ m!\((?<date1>(?<d1>\d{2})/(?<m1>\d{2})/(?<y1>\d{4})) - (?<date2>(?<d2>\d{2})/(?<m2>\d{2})/(?<y2>\d{4}))\)!) {
+      EXTRACT_DATE:
+        {
+            last unless $row->{description} =~ m!\((?<date1>(?<d1>\d{2})/(?<m1>\d{2})/(?<y1>\d{4})) - (?<date2>(?<d2>\d{2})/(?<m2>\d{2})/(?<y2>\d{4}))\)!;
             my %m = %+;
           CHECK_DATE: {
                 $m{d1} <= 31 or do { log_warn "$label: Day is >31 in date1 '$m{date1}', assuming immediate"; undef $date1; last CHECK_DATE };
@@ -483,7 +485,7 @@ _
                 }
                 # sanity check
                 if ($date2 lt $date_old_limit) {
-                    $row->{category} = 'old2';
+                    $row->{category} = 'old';
                     $row->{rev_past} = $row->{amount};
                     log_warn "$label: Date2 '$date2' is too old (< $date_old_limit), recognizing as past revenue";
                     next ITEM;
@@ -501,6 +503,15 @@ _
                 last INFER_TYPE;
             }
             if ($row->{description} =~ /^(perpanjangan hosting|hosting renewal)/i && $date1 && $date2) {
+                $type = 'Domain';
+                last INFER_TYPE;
+            }
+            if ($row->{description} =~ /^(opsi tambahan|\baddon\b)/i && $date1 && $date2) {
+                $type = 'Addon';
+                last INFER_TYPE;
+            }
+            # assume anything else with date range as hosting
+            if ($date1 && $date2) {
                 $type = 'Hosting';
                 last INFER_TYPE;
             }
@@ -508,7 +519,7 @@ _
 
       ITEM_DEPOSIT:
         {
-            last unless $row->{type} eq 'AddFunds';
+            last unless $type eq 'AddFunds' || ($type eq '' && $row->{description} =~ /^deposit dana/i);
             $row->{category} = 'deposit';
             log_trace "$label: AddFunds is not a revenue";
             next ITEM;
@@ -520,8 +531,8 @@ _
             for my $i (0..$#{ $args{extra_rules} }) {
                 my $rule = $args{extra_rules}[$i];
                 if ($rule->{type}) {
-                    log_trace "Matching extra rule: type: %s vs %s", $rule->{type}, $row->{type};
-                    next unless $row->{type} =~ /$rule->{type}/;
+                    log_trace "Matching extra rule: type: %s vs %s", $rule->{type}, $type;
+                    next unless $type =~ /$rule->{type}/;
                 }
                 if ($rule->{description}) {
                     log_trace "Matching extra rule: description: %s vs %s", $rule->{description}, $row->{description};
@@ -529,30 +540,39 @@ _
                 }
                 log_trace "%s: matches rule #%d", $label, $i+1;
                 $row->{category} = $rule->{category};
-                next ITEM;
+                goto DEFER;
             }
         }
 
       ITEM_HOSTING:
         {
-            last unless $type eq 'Hosting' && $date1 && $date2;
+            last unless $type =~ /^Hosting$/ && $date1 && $date2;
             $row->{category} = 'revenue_deferred';
             log_debug "$label: Item is hosting, deferring revenue $row->{amount} from $date1 to $date2";
-            _add_monthly_revs($row, $date1, $date2, $date_old_limit);
-            next ITEM;
+            goto DEFER;
         }
 
         if ($type =~ /^(|Invoice|Item|Hosting|Addon|Domain|DomainRegister|DomainTransfer|PromoDomain|PromoHosting|Upgrade|MG_DIS_CHARGE)$/) {
             $row->{category} = 'revenue_immediate';
             log_debug "$label: Type is '$type', recognized revenue $row->{amount} immediately (not deferred) at date of payment $row->{datepaid}";
-            _add_monthly_revs($row, $row->{datepaid}, undef);
-            next ITEM;
+            goto DEFER;
         }
 
-        $row->{category} = 'revenue_immediate';
-        log_warn "$label: Can't categorize, assuming immediate";
-        _add_monthly_revs($row, $row->{datepaid}, undef);
-        next ITEM;
+        unless ($row->{category}) {
+            $row->{category} = 'revenue_immediate';
+            log_warn "$label: Can't categorize, assuming immediate";
+            goto DEFER;
+        }
+
+      DEFER:
+        {
+            if ($row->{category} eq 'revenue_deferred' && $date1 && $date2) {
+                _add_monthly_revs($row, $date1, $date2, $date_old_limit);
+            } elsif ($row->{category} eq 'revenue_immediate') {
+                _add_monthly_revs($row, $row->{datepaid}, undef);
+            }
+        }
+        $row->{type} = "$type (inferred)" if !$row->{type} && $type;
     }
 
     if ($num_errors) {
