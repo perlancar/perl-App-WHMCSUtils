@@ -308,7 +308,7 @@ then defers the revenue to separate months for items that should be deferred,
 and finally sums the amounts to calculate total monthly deferred revenues.
 
 This utility can also be instructed (via setting the `full` option to true) to
-output the full report (each items with their categorizations and deferred
+output the full CSV report (each items with their categorizations and deferred
 revenues).
 
 Recognizes English and Indonesian description text.
@@ -322,6 +322,30 @@ Categorization heuristics:
 * Other items will be assumed as immediate revenues.
 
 Extra rules (applied first) can be specified via the `extra_rules` option.
+
+To use this utility, install the Perl CPAN distribution <pm:App::WHMCSUtils>.
+Then, create a configuration file `~/whmcs-calc-deferred-revenue.conf`
+containing something like:
+
+    db_name=YOURDBNAME
+    db_host=YOURDBHOST
+    db_user=YOURDBUSER
+    db_pass=YOURDBPASS
+
+`db_host` defaults to `localhost`. `db_user` and `db_pass` can be omitted if you
+have `/etc/my.cnf` or `~/.my.cnf`. This utility can search for username/password
+from those files.
+
+You can also add other configuration like `extra_rules`, e.g.:
+
+    extra_rules=[{"type": "^$", "description": "^(?^i)sewa\\b.*ruang", "category": "rent"}]
+
+You can then run the utility for the desired, e.g.:
+
+    % whmcs-calc-deferred-revenue --date-start 2013-01-01 --date-end 2017-10-31 \
+        --date-old-limit 2013-01-01 --full --output-file ~/output.csv
+
+Wait for a while and check the output at `~/output.csv`.
 
 _
     args => {
