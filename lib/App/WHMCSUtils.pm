@@ -444,7 +444,7 @@ WHERE
   i.status='Paid' AND
   i.datepaid IS NOT NULL AND
   ii.amount <> 0 $extra_wheres
-ORDER BY ii.invoiceid
+ORDER BY i.datepaid
 _
 
     log_info "Loading all paid invoice items ...";
