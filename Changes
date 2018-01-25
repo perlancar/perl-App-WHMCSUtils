@@ -1,3 +1,10 @@
+0.003   2018-01-25 (PERLANCAR)
+
+	- [ux] Order invoice items by date paid instead of invoice ID.
+
+	- [doc] Add usage instruction.
+
+
 0.002   2018-01-25 (PERLANCAR)
 
         - First public release.
