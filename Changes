@@ -1,3 +1,9 @@
+0.004   2018-01-26 (PERLANCAR)
+
+	- Allow extra rules to set to revenue, some fixes/improvements of
+	  rules.
+
+
 0.003   2018-01-25 (PERLANCAR)
 
 	- [ux] Order invoice items by date paid instead of invoice ID.
