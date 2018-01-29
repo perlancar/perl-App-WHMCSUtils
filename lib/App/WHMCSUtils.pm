@@ -508,7 +508,7 @@ _
                 $type = 'Domain';
                 last INFER_TYPE;
             }
-            if ($row->{description} =~ /^(opsi tambahan|\baddon\b)/i && $date1 && $date2) {
+            if ($row->{description} =~ /^(opsi tambahan|addon)\b/i && $date1 && $date2) {
                 $type = 'Addon';
                 last INFER_TYPE;
             }
@@ -554,7 +554,7 @@ _
             goto DEFER;
         }
 
-        if ($type =~ /^(|Invoice|Item|Hosting|Addon|Domain|DomainRegister|DomainTransfer|PromoDomain|PromoHosting|Upgrade|MG_DIS_CHARGE)$/) {
+        if ($type =~ /^(|Invoice|Item|Hosting|Addon|Domain|DomainAddonIDP|DomainRegister|DomainTransfer|PromoDomain|PromoHosting|Upgrade|MG_DIS_CHARGE)$/) {
             $row->{category} = 'revenue_immediate';
             log_debug "$label: Type is '$type', recognized revenue $row->{amount} immediately (not deferred) at date of payment $row->{datepaid}";
             goto DEFER;
