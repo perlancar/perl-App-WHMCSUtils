@@ -1,3 +1,15 @@
+0.005   2018-01-29 (PERLANCAR)
+
+	- Add total row to CSV.
+
+	- Tweak categorization.
+
+	- [ux] Tweak logging.
+
+	- [ux] Escape multiline description to make it easier to scan log
+	  lines.
+
+
 0.004   2018-01-26 (PERLANCAR)
 
 	- Allow extra rules to set to revenue, some fixes/improvements of
