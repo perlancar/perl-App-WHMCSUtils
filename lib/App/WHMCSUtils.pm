@@ -401,6 +401,8 @@ _
     },
 };
 sub calc_deferred_revenue {
+    require String::Escape;
+
     my %args = @_;
 
     log_trace "args=%s", \%args;
@@ -462,7 +464,7 @@ _
     for my $i (0..$#rows) {
         my $row = $rows[$i];
         my $label = "(".($i+1)."/".(scalar @rows).
-            ") item#$row->{id} inv#=$row->{invoiceid} datepaid=#$row->{datepaid} amount=$row->{amount} description='$row->{description}'";
+            ") item#$row->{id} inv#=$row->{invoiceid} datepaid=#$row->{datepaid} type=".($row->{type} // '')." amount=$row->{amount} description='".String::Escape::backslash($row->{description})."'";
         log_trace "Processing $label: %s ...", $row;
         $progress->update if $progress;
 
