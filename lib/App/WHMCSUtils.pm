@@ -481,7 +481,7 @@ _
                 $date1 = "$m{y1}-$m{m1}-$m{d1}";
                 $date2 = "$m{y2}-$m{m2}-$m{d2}";
                 if ($date1 gt $date2) {
-                    log_warn "$label: Date1 '$date1' > date2 '$date2' in description '$row->{description}', assuming immediate";
+                    log_warn "$label: Date1 '$date1' > date2 '$date2', assuming immediate";
                     undef $date1; undef $date2;
                     last CHECK_DATE;
                 }
@@ -489,7 +489,7 @@ _
                 if ($date2 lt $date_old_limit) {
                     $row->{category} = 'old';
                     $row->{rev_past} = $row->{amount};
-                    log_warn "$label: Date2 '$date2' is too old (< $date_old_limit), recognizing as past revenue";
+                    log_info "$label: Date2 '$date2' is too old (< $date_old_limit), recognizing as past revenue";
                     next ITEM;
                 }
             }
