@@ -581,6 +581,22 @@ _
         return [500, "There are still errors in the invoice items, please fix first"];
     }
 
+    log_info "Calculating revenues ...";
+    my %totalrow;
+    for my $row (@rows) {
+        for my $k (keys %$row) {
+            if ($k =~ /^rev_(\d{4})_(\d{2})$/) {
+                $totalrow{$k} += $row->{$k};
+            } elsif ($k =~ /^rev_past$/) {
+                $totalrow{$k} += $row->{$k};
+            }
+        }
+    }
+    $totalrow{rev_total_nonpast} = 0;
+    for (grep {/^rev_\d/} keys %totalrow) {
+        $totalrow{rev_total_nonpast} += $totalrow{$_};
+    }
+
     if ($args{full}) {
         log_info "Producing CSV ...";
         $progress->target(2 * @rows);
@@ -594,6 +610,8 @@ _
         }
         push @fields, "rev_past" if delete $months{rev_past};
         push @fields, $_ for sort keys %months;
+        push @fields, "rev_total_nonpast"
+            if exists $totalrow{rev_total_nonpast};
 
         # output rows
         my $fh;
@@ -605,29 +623,26 @@ _
         }
         require Text::CSV_XS;
         my $csv = Text::CSV_XS->new({ binary=>1 });
+
+        # header row
         $csv->combine(@fields);
         print $fh $csv->string, "\n";
+
+        # data row
         for my $row (@rows) {
             $progress->update;
             $csv->combine(map {$row->{$_} // ''} @fields);
             print $fh $csv->string, "\n";
         }
-    }
 
-    log_info "Calculating revenues ...";
-    my %revs; # key = period
-    for my $row (@rows) {
-        for my $k (keys %$row) {
-            if ($k =~ /^rev_(\d{4})_(\d{2})$/) {
-                $revs{"$1-$2"} += $row->{$k};
-            } elsif ($k =~ /^rev_past$/) {
-                $revs{'00-past'} += $row->{$k};
-            }
-        }
+        # total row
+        $totalrow{id} = "TOTAL";
+        $csv->combine(map {$totalrow{$_} // ''} @fields);
+        print $fh $csv->string, "\n";
     }
 
     $progress->finish if $progress;
-    return [200, "OK", \%revs];
+    return [200, "OK", \%totalrow];
 }
 
 1;
