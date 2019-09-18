@@ -10,9 +10,13 @@ use strict;
 use warnings;
 use Log::ger;
 
+use Digest::MD5 qw(md5_hex);
 use File::chdir;
 use IPC::System::Options qw(system readpipe);
+use LWP::UserAgent::Patch::HTTPSHardTimeout;
+use LWP::UserAgent;
 use Path::Tiny;
+use WWW::Mechanize;
 
 our %SPEC;
 
@@ -38,6 +42,31 @@ our %args_db = (
         schema => 'str*',
     },
     db_pass => {
+        schema => 'str*',
+    },
+);
+
+our %args_whmcs_credential = (
+    url => {
+        schema => 'url*',
+        req => 1,
+        description => <<'_',
+
+It should be without `/admin` part, e.g.:
+
+    https://client.mycompany.com/
+
+_
+    },
+    admin_username => {
+        schema => 'str*',
+        req => 1,
+    },
+    admin_password => {
+        schema => 'str*',
+        req => 1,
+    },
+    mech_user_agent => {
         schema => 'str*',
     },
 );
@@ -116,7 +145,6 @@ _
     },
 };
 sub restore_whmcs_client {
-
     my %args = @_;
 
     local $CWD;
@@ -643,6 +671,151 @@ _
 
     $progress->finish if $progress;
     return [200, "OK", \%totalrow];
+}
+
+# login to whmcs admin area, dies on failure
+my $logged_in = 0;
+our $mech;
+sub _login_admin {
+    my %args = @_;
+
+    return $mech if $logged_in;
+    my $url = $args{url} . "/admin";
+    log_debug("Logging into %s as %s ...", $url, $args{admin_username});
+
+    $mech = WWW::Mechanize->new(
+        (agent => $args{mech_user_agent}) x !!defined($args{mech_user_agent}),
+    );
+    $mech->get("$url/login.php");
+
+    if ( !$mech->success || $mech->content !~ m!<form .*dologin.php!) {
+        die "Failed opening WHMCS admin login page (status=". $mech->status. ")";
+    }
+    $mech->submit_form(
+        form_number => 1,
+        fields      => {
+            username => $args{admin_username},
+            password => $args{admin_password},
+        },
+    );
+
+    my $success = $mech->success;
+    my $content = $mech->content;
+    my @err;
+    if (!$success) {
+        push @err, "Can't submit successfully: ".$mech->res->code." - ".$mech->res->message;
+    }
+    if ($content !~ /Logout/i) {
+        push @err, "Not logged in yet (no Logout string)";
+    }
+    if ($content =~ m!<form .*dologin.php!) {
+        push @err, "Getting form login again";
+    }
+    if (@err) {
+        die "Failed logging into WHMCS admin area: ".join(", ", @err);
+    }
+    $logged_in++;
+    $mech;
+}
+
+sub _send_verification_email {
+    my ($args, $client_rec) = @_;
+
+    my $url0 = "$args->{url}/admin/clientssummary.php";
+    my $url1 = "$url0?userid=$client_rec->{id}";
+    $mech->get($url1);
+    die "Can't get $url1: " . $mech->status unless $mech->success;
+
+    my $content = $mech->content;
+    $content =~ /'token':\s*'(\w+)'/ or die "Can't extract submit token";
+    $mech->post(
+        $url0,
+        [
+            token => $1,
+            action => 'resendVerificationEmail',
+            userid => $client_rec->{id},
+        ],
+    );
+    die "Can't post to $url1 to submit resend action: " .
+        $mech->status unless $mech->success;
+}
+
+$SPEC{send_verification_emails} = {
+    v => 1.1,
+    summary => 'Send verification emails for clients who have not had their email verified',
+    description => <<'_',
+
+WHMCS does not yet provide an API for this, so we do this via a headless
+browser.
+
+_
+    args => {
+        %args_db,
+        %args_whmcs_credential,
+        action => {
+            schema => ['str*', in=>['list-clients', 'send-verification-emails']],
+            default => 'send-verification-emails',
+            cmdline_aliases => {
+                list_clients => {is_flag=>1, summary=>'Shortcut for --action=list-clients', code=>sub {$_[0]{action} = 'list-clients'}},
+            },
+            description => <<'_',
+
+The default action is to send verification emails. You can also just list the
+clients who haven't got their email verified yet.
+
+_
+        },
+        random => {
+            schema => 'bool*',
+            default => 1,
+        },
+        include_client_ids => {
+            #'x.name.is_plural' => 1,
+            #'x.name.singular' => 'include_client_id',
+            schema => ['array*', of=>'uint*', 'x.perl.coerce_rules'=>['str_comma_sep']],
+            tags => ['category:filtering'],
+        },
+    },
+    features => {
+        dry_run => 1,
+    },
+};
+sub send_verification_emails {
+    my %args = @_;
+    $args{random} //= 1;
+
+    my $dbh = _connect_db(%args);
+
+    my $sth = $dbh->prepare(
+        join("",
+             "SELECT id,firstname,lastname,companyname,email FROM tblclients ",
+             "WHERE status='Active' AND email_verified=0",
+             ($args{include_client_ids} ? " AND id IN (".join(",",map{$_+0} @{ $args{include_client_ids} }).")" : ""),
+             "ORDER BY ".($args{random} ? "RAND()" : "id"),
+         ),
+    );
+    $sth->execute;
+
+    my @client_recs;
+    my %emails;
+    while (my $row = $sth->fetchrow_hashref) {
+        push @client_recs, $row;
+    }
+
+    if ($args{action} eq 'list-clients') {
+        return [200, "OK", \@client_recs];
+    }
+
+    my $i = 0;
+    _login_admin(%args);
+    for my $client_rec (@client_recs) {
+        $i++;
+        log_info "[%d/%d] Sending verification email for client #%d (%s %s, email %s) ...",
+            $i, scalar(@client_recs),
+            $client_rec->{id}, $client_rec->{firstname}, $client_rec->{lastname}, $client_rec->{email};
+        _send_verification_email(\%args, $client_rec);
+    }
+    [200];
 }
 
 1;
