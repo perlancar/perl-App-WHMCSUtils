@@ -721,6 +721,8 @@ sub _login_admin {
 sub _send_verification_email {
     my ($args, $client_rec) = @_;
 
+    _login_admin(%$args);
+
     my $url0 = "$args->{url}/admin/clientssummary.php";
     my $url1 = "$url0?userid=$client_rec->{id}";
     $mech->get($url1);
@@ -780,6 +782,23 @@ _
             schema => ['bool*'],
             tags => ['category:filtering'],
         },
+        hook_set_sender_email => {
+            summary => 'Hook to set sender email for every email',
+            description => <<'_',
+
+Hook will receive these arguments:
+
+    ($client_rec, $orig_sender_email)
+
+`$client_rec` is a hash containing client record fields, e.g. `id`, `email`,
+`firstname`, `lastname`, etc. `$orig_sender_email` is the original sender email
+setting (`Email` setting in the configuration table).
+
+Hook is expected to return the sender email.
+
+_
+            schema => ['any*', of=>['str*', 'code*']],
+        },
     },
     features => {
         dry_run => 1,
@@ -814,14 +833,31 @@ sub send_verification_emails {
     }
 
     my $i = 0;
-    _login_admin(%args);
+    my ($orig_sender_email) = $dbh->selectrow_array("SELECT value FROM tblconfiguration WHERE setting='Email'");
+
     for my $client_rec (@client_recs) {
         $i++;
-        log_info "[%d/%d] Sending verification email for client #%d (%s %s, email %s) ...",
+        my $sender_email = $orig_sender_email;
+        if ($args{hook_set_sender_email}) {
+            unless (ref $args{hook_set_sender_email} eq 'CODE') {
+                $args{hook_set_sender_email} = eval "sub { $args{hook_set_sender_email} }";
+                die "Can't compile code in hook_set_sender_email: $@" if $@;
+            }
+            $sender_email = $args{hook_set_sender_email}->($client_rec, $orig_sender_email);
+            $dbh->do("UPDATE tblconfiguration SET value=? WHERE setting='Email'", {}, $sender_email);
+        }
+        log_info "[%d/%d]%s Sending verification email (sender email %s) for client #%d (%s %s, email %s) ...",
             $i, scalar(@client_recs),
+            $args{-dry_run} ? " [DRY-RUN]" : "",
+            $sender_email,
             $client_rec->{id}, $client_rec->{firstname}, $client_rec->{lastname}, $client_rec->{email};
+        next if $args{-dry_run};
         _send_verification_email(\%args, $client_rec);
     }
+
+    # XXX execute even when we're SIGINT'ed
+    $dbh->do("UPDATE tblconfiguration SET value=? WHERE setting='Email'", {}, $orig_sender_email);
+
     [200];
 }
 
