@@ -775,6 +775,11 @@ _
             schema => ['array*', of=>'uint*', 'x.perl.coerce_rules'=>['str_comma_sep']],
             tags => ['category:filtering'],
         },
+        inactive => {
+            summary => 'Whether to include inactive clients',
+            schema => ['bool*'],
+            tags => ['category:filtering'],
+        },
     },
     features => {
         dry_run => 1,
@@ -789,8 +794,9 @@ sub send_verification_emails {
     my $sth = $dbh->prepare(
         join("",
              "SELECT id,firstname,lastname,companyname,email FROM tblclients ",
-             "WHERE status='Active' AND email_verified=0",
-             ($args{include_client_ids} ? " AND id IN (".join(",",map{$_+0} @{ $args{include_client_ids} }).")" : ""),
+             "WHERE email_verified=0 ",
+             ($args{inactive} ? "" : "AND status='Active' "),
+             ($args{include_client_ids} ? "AND id IN (".join(",",map{$_+0} @{ $args{include_client_ids} }).")" : ""),
              "ORDER BY ".($args{random} ? "RAND()" : "id"),
          ),
     );
@@ -801,6 +807,7 @@ sub send_verification_emails {
     while (my $row = $sth->fetchrow_hashref) {
         push @client_recs, $row;
     }
+    log_info "Found %d client email(s)", scalar(@client_recs);
 
     if ($args{action} eq 'list-clients') {
         return [200, "OK", \@client_recs];
