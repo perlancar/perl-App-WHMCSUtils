@@ -827,8 +827,8 @@ sub send_verification_emails {
         join("",
              "SELECT id,firstname,lastname,companyname,email FROM tblclients ",
              "WHERE email_verified=0 ",
-             (defined $args{include_active}   && !$args{include_active}   ? "" : "AND status <> 'Active' "  ),
-             (defined $args{include_inactive} && !$args{include_inactive} ? "" : "AND status <> 'Inactive' "),
+             (defined $args{include_active}   && !$args{include_active}   ? "AND status <> 'Active' "   : ""),
+             (defined $args{include_inactive} && !$args{include_inactive} ? "AND status <> 'Inactive' " : ""),
              ($args{include_client_ids} ? "AND id IN (".join(",",map{$_+0} @{ $args{include_client_ids} }).")" : ""),
              "ORDER BY ".($args{random} ? "RAND()" : "id"),
          ),
@@ -851,6 +851,10 @@ sub send_verification_emails {
 
     for my $client_rec (@client_recs) {
         $i++;
+        if ($args{limit} && $i > $args{limit}) {
+            log_info "Terminating because limit is set to %d", $args{limit};
+            last;
+        }
         my $sender_email = $orig_sender_email;
         if ($args{hook_set_sender_email}) {
             unless (ref $args{hook_set_sender_email} eq 'CODE') {
@@ -858,7 +862,6 @@ sub send_verification_emails {
                 die "Can't compile code in hook_set_sender_email: $@" if $@;
             }
             $sender_email = $args{hook_set_sender_email}->($client_rec, $orig_sender_email);
-            $dbh->do("UPDATE tblconfiguration SET value=? WHERE setting='Email'", {}, $sender_email);
         }
         log_info "[%d/%d]%s Sending verification email (sender email %s) for client #%d (%s %s, email %s) ...",
             $i, scalar(@client_recs),
@@ -867,10 +870,6 @@ sub send_verification_emails {
             $client_rec->{id}, $client_rec->{firstname}, $client_rec->{lastname}, $client_rec->{email};
         next if $args{-dry_run};
         _send_verification_email(\%args, $client_rec, $dbh, $orig_sender_email, $sender_email);
-        if ($args{limit} && $i >= $args{limit}) {
-            log_info "Terminating because limit is set to %d", $args{limit};
-            last;
-        }
     }
 
     [200];
