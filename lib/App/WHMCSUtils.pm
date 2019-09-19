@@ -719,7 +719,7 @@ sub _login_admin {
 }
 
 sub _send_verification_email {
-    my ($args, $client_rec) = @_;
+    my ($args, $client_rec, $dbh, $orig_sender_email, $sender_email) = @_;
 
     _login_admin(%$args);
 
@@ -730,6 +730,7 @@ sub _send_verification_email {
 
     my $content = $mech->content;
     $content =~ /'token':\s*'(\w+)'/ or die "Can't extract submit token";
+    $dbh->do("UPDATE tblconfiguration SET value=? WHERE setting='Email'", {}, $sender_email) if $sender_email ne $orig_sender_email;
     $mech->post(
         $url0,
         [
@@ -740,6 +741,7 @@ sub _send_verification_email {
     );
     die "Can't post to $url1 to submit resend action: " .
         $mech->status unless $mech->success;
+    $dbh->do("UPDATE tblconfiguration SET value=? WHERE setting='Email'", {}, $orig_sender_email) if $sender_email ne $orig_sender_email;
 }
 
 $SPEC{send_verification_emails} = {
