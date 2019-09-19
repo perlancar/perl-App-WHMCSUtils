@@ -1,3 +1,12 @@
+0.007   2019-09-19  Released-By: PERLANCAR; Urgency: medium
+
+	[whmcs-send-verification-emails]
+
+        - Add options --(no-)include-active & --(no-)include-inactive.
+
+	- Add option --hook-set-sender-email.
+
+
 0.006   2019-09-19  Released-By: PERLANCAR; Urgency: medium
 
 	- Add utility: whmcs-send-verification-emails.
