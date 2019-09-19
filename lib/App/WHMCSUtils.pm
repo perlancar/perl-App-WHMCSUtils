@@ -777,9 +777,16 @@ _
             schema => ['array*', of=>'uint*', 'x.perl.coerce_rules'=>['str_comma_sep']],
             tags => ['category:filtering'],
         },
-        inactive => {
+        include_active => {
+            summary => 'Whether to include active clients',
+            schema => ['bool*'],
+            default => 1,
+            tags => ['category:filtering'],
+        },
+        include_inactive => {
             summary => 'Whether to include inactive clients',
             schema => ['bool*'],
+            default => 0,
             tags => ['category:filtering'],
         },
         hook_set_sender_email => {
@@ -814,7 +821,8 @@ sub send_verification_emails {
         join("",
              "SELECT id,firstname,lastname,companyname,email FROM tblclients ",
              "WHERE email_verified=0 ",
-             ($args{inactive} ? "" : "AND status='Active' "),
+             (defined $args{include_active}   && !$args{include_active}   ? "" : "AND status <> 'Active' "  ),
+             (defined $args{include_inactive} && !$args{include_inactive} ? "" : "AND status <> 'Inactive' "),
              ($args{include_client_ids} ? "AND id IN (".join(",",map{$_+0} @{ $args{include_client_ids} }).")" : ""),
              "ORDER BY ".($args{random} ? "RAND()" : "id"),
          ),
