@@ -26,6 +26,8 @@
 
 0.005   2018-01-29  Released-By: PERLANCAR
 
+        [whmcs-calc-deferred-revenue]
+
 	- Add total row to CSV.
 
 	- Tweak categorization.
@@ -38,11 +40,15 @@
 
 0.004   2018-01-26  Released-By: PERLANCAR
 
+        [whmcs-calc-deferred-revenue]
+
 	- Allow extra rules to set to revenue, some fixes/improvements of
 	  rules.
 
 
 0.003   2018-01-25  Released-By: PERLANCAR
+
+        [whmcs-calc-deferred-revenue]
 
 	- [ux] Order invoice items by date paid instead of invoice ID.
 
