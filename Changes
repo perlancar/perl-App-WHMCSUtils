@@ -1,5 +1,7 @@
 0.008   2019-09-19  Released-By: PERLANCAR; Urgency: medium
 
+	[whmcs-send-verification-emails]
+
 	- Add option --limit.
 
 	- [bugfix] Reduce the window size of changing sender email in the
