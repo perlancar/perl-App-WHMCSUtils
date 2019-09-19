@@ -773,6 +773,10 @@ _
             schema => 'bool*',
             default => 1,
         },
+        limit => {
+            summary => 'Only process this many clients then stop',
+            schema => 'uint*',
+        },
         include_client_ids => {
             #'x.name.is_plural' => 1,
             #'x.name.singular' => 'include_client_id',
@@ -862,11 +866,12 @@ sub send_verification_emails {
             $sender_email,
             $client_rec->{id}, $client_rec->{firstname}, $client_rec->{lastname}, $client_rec->{email};
         next if $args{-dry_run};
-        _send_verification_email(\%args, $client_rec);
+        _send_verification_email(\%args, $client_rec, $dbh, $orig_sender_email, $sender_email);
+        if ($args{limit} && $i >= $args{limit}) {
+            log_info "Terminating because limit is set to %d", $args{limit};
+            last;
+        }
     }
-
-    # XXX execute even when we're SIGINT'ed
-    $dbh->do("UPDATE tblconfiguration SET value=? WHERE setting='Email'", {}, $orig_sender_email);
 
     [200];
 }
