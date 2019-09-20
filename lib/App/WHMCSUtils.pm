@@ -783,6 +783,9 @@ _
             schema => ['array*', of=>'uint*', 'x.perl.coerce_rules'=>['str_comma_sep']],
             tags => ['category:filtering'],
         },
+        include_client_ids_from => {
+            schema => 'filename*',
+        },
         include_active => {
             summary => 'Whether to include active clients',
             schema => ['bool*'],
@@ -823,6 +826,15 @@ sub send_verification_emails {
 
     my $dbh = _connect_db(%args);
 
+    my @included_client_ids;
+    if (defined $args{include_client_ids_from}) {
+        open my $fh, "<", $args{include_client_ids_from} or die "Can't open $args{include_client_ids_from}: $!";
+        while (<$fh>) {
+            chomp;
+            push @included_client_ids, $_;
+        }
+    }
+
     my $sth = $dbh->prepare(
         join("",
              "SELECT id,firstname,lastname,companyname,email FROM tblclients ",
@@ -830,6 +842,7 @@ sub send_verification_emails {
              (defined $args{include_active}   && !$args{include_active}   ? "AND status <> 'Active' "   : ""),
              (defined $args{include_inactive} && !$args{include_inactive} ? "AND status <> 'Inactive' " : ""),
              ($args{include_client_ids} ? "AND id IN (".join(",",map{$_+0} @{ $args{include_client_ids} }).")" : ""),
+             (@included_client_ids ? "AND id IN (".join(",",@included_client_ids).")" : ""),
              "ORDER BY ".($args{random} ? "RAND()" : "id"),
          ),
     );
