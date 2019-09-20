@@ -13,7 +13,7 @@ use Log::ger;
 use Digest::MD5 qw(md5_hex);
 use File::chdir;
 use IPC::System::Options qw(system readpipe);
-use LWP::UserAgent::Patch::HTTPSHardTimeout;
+use LWP::UserAgent::Patch::Retry -n=>60, -delay=>10;
 use LWP::UserAgent;
 use Path::Tiny;
 use WWW::Mechanize;
