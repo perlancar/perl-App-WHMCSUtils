@@ -331,9 +331,36 @@ $SPEC{calc_deferred_revenue} = {
     v => 1.1,
     description => <<'_',
 
+Deferring revenue is the process of recognizing revenue as you have earned it,
+in contrast to as you have received the cash. This is the principle of accrual
+accounting, as opposed to cash-based accounting. For example, if you receive an
+amount of $12 for 12 months of hosting, you then recognize $1 revenue for each
+month you are performing the hosting obligation, for 12 times.
+
+For example, suppose you have three invoices:
+
+    invoice num    type                  amount    note
+    -----------    ------                ------    ----
+    1001           domain registration     10.5    example.com, from 2019-11-11 to 2020-11-10
+    1002           hosting                  9.0    example.com, from 2019-11-11 to 2020-02-10 (3 months)
+    1003           hosting                 12.0    example.com, from 2019-11-01 to 2020-04-30 (6 months)
+
+The first invoice is not deferred, since we have earned (or performed the
+obligation of domain registration) immediately. The second and third invoices
+are deferred. This is how the deferment will go:
+
+    invoice \ period   2019-11   2019-12   2020-01   2020-02   2020-03   2020-04
+    ----------------   -------   -------   -------   -------   -------   -------
+    1001                  10.5
+    1002                   3.0       3.0       3.0
+    1003                   2.0       2.0       2.0       2.0       2.0       2.0
+
+    TOTAL                 15.5       5.0       5.0       2.0       2.0       2.0
+
 This utility collects invoice items from paid invoices, filters eligible ones,
-then defers the revenue to separate months for items that should be deferred,
-and finally sums the amounts to calculate total monthly deferred revenues.
+then defers the revenue to separate months for items that should be deferred
+(determined using some heuristic and additionally configurable options), and
+finally sums the amounts to calculate total monthly deferred revenues.
 
 This utility can also be instructed (via setting the `full` option to true) to
 output the full CSV report (each items with their categorizations and deferred
