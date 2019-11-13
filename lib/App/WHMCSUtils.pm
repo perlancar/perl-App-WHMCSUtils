@@ -331,13 +331,17 @@ $SPEC{calc_deferred_revenue} = {
     v => 1.1,
     description => <<'_',
 
-Deferring revenue is the process of recognizing revenue as you have earned it,
-in contrast to as you have received the cash. This is the principle of accrual
-accounting, as opposed to cash-based accounting. For example, if you receive an
-amount of $12 for 12 months of hosting, you then recognize $1 revenue for each
-month you are performing the hosting obligation, for 12 times.
+Deferring revenue is the process of recognizing revenue as you earn it, in
+contrast to as you receive the cash. This is the principle of accrual
+accounting, as opposed to cash-based accounting.
 
-For example, suppose you have three invoices:
+For example, suppose on Nov 1, 2019 you receive an amount of $12 for 12 months
+of hosting (up until Oct 31, 2020). In cash-based accounting, you immediately
+recognize the $12 as revenue on Nov 1, 2019. In accrual accounting, you
+recognize $1 revenue for each month you are performing the hosting obligation,
+for 12 times, from Nov 2019 to Oct 2020.
+
+As another example, suppose you have three invoices:
 
     invoice num    type                  amount    note
     -----------    ------                ------    ----
