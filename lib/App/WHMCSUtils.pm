@@ -2,7 +2,9 @@
 
 package App::WHMCSUtils;
 
+# AUTHORITY
 # DATE
+# DIST
 # VERSION
 
 use 5.010001;
@@ -811,7 +813,7 @@ _
         include_client_ids => {
             #'x.name.is_plural' => 1,
             #'x.name.singular' => 'include_client_id',
-            schema => ['array*', of=>'uint*', 'x.perl.coerce_rules'=>['str_comma_sep']],
+            schema => ['array*', of=>'uint*', 'x.perl.coerce_rules'=>['From_str::comma_sep']],
             tags => ['category:filtering'],
         },
         include_client_ids_from => {
