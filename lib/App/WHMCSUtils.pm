@@ -904,7 +904,7 @@ sub send_verification_emails {
         my $sender_email = $orig_sender_email;
         if ($args{hook_set_sender_email}) {
             unless (ref $args{hook_set_sender_email} eq 'CODE') {
-                $args{hook_set_sender_email} = eval "sub { $args{hook_set_sender_email} }";
+                $args{hook_set_sender_email} = eval "sub { $args{hook_set_sender_email} }"; ## no critic: BuiltinFunctions::ProhibitStringyEval
                 die "Can't compile code in hook_set_sender_email: $@" if $@;
             }
             $sender_email = $args{hook_set_sender_email}->($client_rec, $orig_sender_email);
