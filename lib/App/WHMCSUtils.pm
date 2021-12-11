@@ -2,11 +2,6 @@
 
 package App::WHMCSUtils;
 
-# AUTHORITY
-# DATE
-# DIST
-# VERSION
-
 use 5.010001;
 use strict;
 use warnings;
@@ -19,6 +14,11 @@ use LWP::UserAgent::Patch::Retry -n=>60, -delay=>10;
 use LWP::UserAgent;
 use Path::Tiny;
 use WWW::Mechanize;
+
+# AUTHORITY
+# DATE
+# DIST
+# VERSION
 
 our %SPEC;
 
@@ -176,9 +176,9 @@ sub restore_whmcs_client {
             $CWD = $sql_backup_dir;
             my @cmd;
             if ($decompress) {
-                push @cmd, "zcat", $pt->absolute->stringify, "|";
+                push @cmd, "zcat", $pt->absolute->stringify, \"|";
             } else {
-                push @cmd, "cat", $pt->absolute->stringify, "|";
+                push @cmd, "cat", $pt->absolute->stringify, \"|";
             }
             push @cmd, "mysql-sql-dump-extract-tables",
                 "--include-table-pattern", '^(tblclients|tblinvoices|tblinvoiceitems|tblorders)$';
@@ -904,7 +904,7 @@ sub send_verification_emails {
         my $sender_email = $orig_sender_email;
         if ($args{hook_set_sender_email}) {
             unless (ref $args{hook_set_sender_email} eq 'CODE') {
-                $args{hook_set_sender_email} = eval "sub { $args{hook_set_sender_email} }";
+                $args{hook_set_sender_email} = eval "sub { $args{hook_set_sender_email} }"; ## no critic: BuiltinFunctions::ProhibitStringyEval
                 die "Can't compile code in hook_set_sender_email: $@" if $@;
             }
             $sender_email = $args{hook_set_sender_email}->($client_rec, $orig_sender_email);
